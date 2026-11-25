@@ -118,4 +118,7 @@ Done when: the status matches what a person finds by hand on one host.
 | 3 | How long a container without a health check must run before it is Healthy | R5 proposes 2 minutes |
 | 4 | Polling interval | P5 |
 | 5 | Repository layout | Recommended: the server and the agent in this one repository, as in hikifune, so one tag builds both from the same commit |
-| 6 | Favicon | The logo is decided ([docs/logo/mizusaki.svg](logo/mizusaki.svg)). A simpler mark for small sizes is still open |
+
+## Logo
+
+[docs/logo/mizusaki.svg](logo/mizusaki.svg) is the logo for the README and other large sizes: a container ship coming up a channel between red and green buoys. [docs/logo/favicon.svg](logo/favicon.svg) keeps only the ship and one buoy of each color for 32 pixels and below. Both use the frame and colors of hikifune's logo.
