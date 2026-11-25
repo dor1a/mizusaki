@@ -26,11 +26,11 @@ What was wanted is the shape of Argo CD (applications, sync status, health, sync
 
 | ID | Requirement |
 | -- | -- |
-| R1 | mizusaki deploys with the same command and from the same checkout path a person uses (the repository's own wrapper script, run in the clone on that host). The result of a sync and of a manual run is the same, so falling back to the manual way never recreates containers |
+| R1 | mizusaki deploys with the same command and from the same checkout path a person uses (the repository's own wrapper script, run in the clone on that host). The result of a sync and of a manual run is the same, so falling back to the manual way never recreates containers. The command is `./stack.sh <stack> up -d`, with `--remove-orphans` when prune is on. Never the bare `./stack.sh up`, which pulls every stack's images and would step on hikifune |
 | R2 | The Git repository that already holds the Compose files is the GitOps repository, as it is. It is not split or renamed. mizusaki's own settings go in one directory in it (for example `.cd/`) |
 | R3 | An application is one stack on one host. An application set makes them from the `<host>/<stack>` directories. Stacks deploy in the order of their tier numbers, like sync waves |
-| R4 | Desired state: `docker compose config --hash` plus a hash of the contents of every mounted file and directory. Live state: the `com.docker.compose.config-hash` label and the state of the containers. An application is Synced or OutOfSync |
-| R5 | Health: a container's health check when it has one. Without one, a container that keeps running for a set time (proposed: 2 minutes) with no restart is Healthy, one that keeps restarting or exits non-zero is Degraded, one with `restart: no` that exited 0 is Completed, and a missing one is Missing. Chosen services can add an HTTP or TCP check with a label |
+| R4 | Desired state: `docker compose config --hash` plus a hash of the contents of the mounted files Git tracks (`git ls-files` under each bind-mount source). Files an app writes into its own config directory (homepage's logs) and the host `.env` stay out; the `.env` values already reach `config --hash`. Live state: the `com.docker.compose.config-hash` label and the state of the containers. An application is Synced or OutOfSync |
+| R5 | Health: a container's health check when it has one. Without one, a container that keeps running for 2 minutes with no restart is Healthy, one that keeps restarting or exits non-zero is Degraded, one with `restart: no` that exited 0 is Completed, and a missing one is Missing. Chosen services can add an HTTP or TCP check with a label |
 | R6 | Manual and automatic sync, self-heal, prune, a history of deploys, and rollback. Prune is off by default |
 | R7 | One server and one agent per Docker host, as in hikifune. The agent keeps the clone and runs the wrapper, since the sources of bind mounts have to be on that host |
 | R8 | The server keeps no state of its own. Applications, projects, options and sync windows live in Git; the deploy history and paused applications live with the agents; status is worked out on each request. A second server can run next to the first |
@@ -40,13 +40,15 @@ What was wanted is the shape of Argo CD (applications, sync status, health, sync
 | R12 | Setting up goes in this order: agent, repository, project, application set, application. The first two carry secrets and live in the server's configuration and the hosts' files. The other three live in Git |
 | R13 | Web UI in Go with HTMX, notifications to Discord. Written in Go |
 | R14 | Some stacks stay manual only: the host basics (VPN, the agents themselves) and the Docker socket proxy mizusaki goes through. A change to identity provider blueprints alone does not recreate the provider, which applies blueprints from the files itself (marked with a label) |
+| R15 | The server and the agent live in this one repository, as in hikifune (`cmd/mizusaki`, `cmd/mizusaki-agent`, one Dockerfile with two targets), so one tag builds both from the same commit |
+| R16 | A host's `.env` holds secrets only (tokens, passwords, API keys). Every value that is not secret, per-host ones such as channel and section IDs included, lives in Git in that host's `.env.<app>` files. Moving the current non-secret values out of the host files is work in the Compose repository, outside mizusaki |
 
 ### Proposed
 
 | ID | Proposal | Why |
 | -- | -- | -- |
 | P1 | Image tags stay in Git and hikifune keeps updating the images. The other way, digests pinned in Git and hikifune committing the new digest, can come later | Keeps hikifune as it is. hikifune recreates a container with its labels copied and only the image changed, so the configuration hash mizusaki compares does not move |
-| P2 | Secrets stay in each host's `.env` file, outside Git. Encrypted secrets in Git (sops with an age key per host) can come later | Nothing has to change on the hosts to start |
+| P2 | Secrets stay in each host's `.env` file, outside Git (R16), and an agent refuses to sync a stack whose `.env` lacks a key the host's `.env.example` lists. Where secrets live later (encrypted in Git with sops and an age key per host, or fetched from a secret store the way External Secrets Operator does) is decided before M4, with rollback | Nothing has to change on the hosts to start. A rollback by revert commit would also roll back secrets kept in Git, so the two have to be designed together |
 | P3 | Only Compose stacks. DNS and tunnel routes, and identity provider configuration, stay where they are managed now | Each has its own tool and source of truth |
 | P4 | A sync window around hikifune's update run (for example 00:50 to 01:30) | mizusaki should not sync a stack while hikifune recreates its containers |
 | P5 | Polling first, a webhook later | Polling needs nothing exposed |
@@ -114,10 +116,13 @@ Done when: the status matches what a person finds by hand on one host.
 | # | Question | Notes |
 | -- | -- | -- |
 | 1 | Images in Git | P1 proposes tags only |
-| 2 | Secrets | P2 proposes host `.env` files first |
-| 3 | How long a container without a health check must run before it is Healthy | R5 proposes 2 minutes |
-| 4 | Polling interval | P5 |
-| 5 | Repository layout | Recommended: the server and the agent in this one repository, as in hikifune, so one tag builds both from the same commit |
+| 2 | Where secrets live after M3 | P2. sops and age, or a secret store. Rollback must not undo a secret change |
+| 3 | Polling interval | P5 |
+| 4 | Who pushes a rollback's revert commit | R10 gives the hosts read-only keys and R11 makes a rollback a revert commit, so some part (the server?) needs write access to the repository |
+| 5 | How the server and the agents talk | M2 says the server dials the agents. Transport, authentication and TLS are not decided |
+| 6 | How a person signs in to the first server | P6 covers only a second server |
+| 7 | Where and in what form an agent keeps its deploy history | R8 puts the history with the agents |
+| 8 | "Done when" for M2 to M6 | Only M0 and M1 have one |
 
 ## Logo
 
